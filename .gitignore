@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+media/
+*.db
+*.db-journal
+.DS_Store
+
+# PocketBase (project-local server)
+backend/pocketbase/pocketbase
+backend/pocketbase/pb_data/
+backend/pocketbase/pb_logs.txt

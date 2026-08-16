@@ -1,0 +1,17 @@
+[project]
+name = "ad-craft-backend"
+version = "0.1.0"
+description = "Ad Craft Agentic Video Engine — FastAPI + LangGraph backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "langgraph>=0.2.60",
+    "edge-tts>=7.0",
+]
+
+[tool.uv]
+package = false
