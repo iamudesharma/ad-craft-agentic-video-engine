@@ -29,6 +29,20 @@ class Settings(BaseSettings):
     image_fallback_placeholder: bool = True
     max_scenes: int = 8
 
+    # Image generation provider: cloudflare | pollinations
+    image_provider: str = "cloudflare"
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    # flux-2-klein-4b is the cheap, fast distilled model (~63 Neurons per 9:16
+    # image, ~159 free/day). Accepts width/height via multipart.
+    cloudflare_model: str = "@cf/black-forest-labs/flux-2-klein-4b"
+    cloudflare_image_steps: int = 4
+    # Max side of generated image (smaller = fewer Neurons).
+    cloudflare_image_max_side: int = 1024
+    # Minimum gap between Cloudflare image API calls (per account-wide lock) to
+    # stay well under the Workers AI rate limit.
+    cloudflare_min_interval_seconds: float = 30.0
+
     hitl_required: bool = True
     fps: int = 25
     font_path: str = "/System/Library/Fonts/Helvetica.ttc"

@@ -59,6 +59,24 @@ PB_URL=http://127.0.0.1:8090
 PB_ADMIN_EMAIL=admin@localhost.dev
 PB_ADMIN_PASSWORD=local-dev-admin-123
 JOB_TIMEOUT_MINUTES=30
+
+# Image generation
+# Cloudflare Workers AI — free 10,000 Neurons/day.
+# flux-2-klein-4b (default): cheap + fast, native aspect up to 1024px
+#   (9:16 -> 576x1024, ~63 Neurons/image, ~159 free/day).
+# flux-1-schnell: fixed 1024x1024 (~172.8 Neurons/image, ~57 free/day).
+# Falls back to pollinations.ai if the request fails.
+IMAGE_PROVIDER=cloudflare
+CLOUDFLARE_ACCOUNT_ID=<account id>
+CLOUDFLARE_API_TOKEN=<api token>
+CLOUDFLARE_MODEL=@cf/black-forest-labs/flux-2-klein-4b
+CLOUDFLARE_IMAGE_STEPS=4
+CLOUDFLARE_IMAGE_MAX_SIDE=1024
+CLOUDFLARE_MIN_INTERVAL_SECONDS=30
 ```
+
+Image API calls are rate-limited to one per `CLOUDFLARE_MIN_INTERVAL_SECONDS`
+(account-wide lock in `app/services/media.py`) to stay well under Workers AI
+limits. On failure the provider chain is `cloudflare -> pollinations -> placeholder`.
 
 Note: PB 0.39 no longer exposes the system `created`/`updated` fields in the records API (they are neither serialized nor sortable), which is why the collection has explicit `created_at`/`updated_at` autodate fields; sorting and the cron timeouts use those.
