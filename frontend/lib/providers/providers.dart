@@ -266,6 +266,17 @@ class JobProgressController
   static const List<bool> _kNoneDone = [false, false, false, false, false, false, false];
   static const List<bool> _kAllDone = [true, true, true, true, true, true, true];
   static const List<bool> _kUntilApproval = [true, true, false, false, false, false, false];
+  static const JobProgressState _queued = JobProgressState(
+    done: _kNoneDone,
+    activeStep: -1,
+    message: 'Queued...',
+  );
+
+  /// Last state reported by the live SSE stream. Kept in a plain field (not
+  /// via `state`) so that `_deriveFromJob` never reads `state`, which Riverpod
+  /// does not allow before the first build has completed ("Tried to read the
+  /// state of an uninitialized provider").
+  JobProgressState? _live;
 
   @override
   JobProgressState build(String jobId) {
@@ -283,6 +294,7 @@ class JobProgressController
   /// even when no live events are available (e.g. reopening a finished job or
   /// after a backend restart).
   JobProgressState _deriveFromJob(JobDetail job) {
+    final live = _live;
     switch (job.status) {
       case 'completed':
         return const JobProgressState(
@@ -293,14 +305,14 @@ class JobProgressController
         );
       case 'failed':
         return JobProgressState(
-          done: state.done,
+          done: live?.done ?? _kNoneDone,
           activeStep: -1,
           message: 'Failed: ${job.error ?? 'unknown error'}',
           progress: 1.0,
         );
       case 'rejected':
         return JobProgressState(
-          done: state.done,
+          done: live?.done ?? _kNoneDone,
           activeStep: -1,
           message: 'Rejected: ${job.error ?? 'no feedback'}',
           progress: 1.0,
@@ -312,24 +324,20 @@ class JobProgressController
           message: 'Awaiting your approval',
         );
       case 'pending':
-        return const JobProgressState(
-          done: _kNoneDone,
-          activeStep: -1,
-          message: 'Queued...',
-        );
+        return _queued;
       case 'running':
         // Keep whatever the live SSE events reported; only fall back to a
         // generic "Running..." when no progress detail is known yet.
-        if (state.message == 'Queued...' || state.message.isEmpty) {
+        if (live == null || live.message == 'Queued...' || live.message.isEmpty) {
           return const JobProgressState(
             done: _kNoneDone,
             activeStep: -1,
             message: 'Running...',
           );
         }
-        return state;
+        return live;
       default:
-        return state;
+        return live ?? _queued;
     }
   }
 
@@ -400,60 +408,61 @@ class JobProgressController
   }
 
   void _set(int step, String message) {
-    final done = [...state.done];
+    final done = [...(_live?.done ?? _kNoneDone)];
     for (var i = 0; i < step; i++) {
       done[i] = true;
     }
-    state = JobProgressState(
-      done: done,
-      activeStep: step,
-      message: message,
-    );
+    _emit(JobProgressState(done: done, activeStep: step, message: message));
   }
 
   void _done(int step) {
-    final done = [...state.done];
+    final prev = _live ?? _queued;
+    final done = [...prev.done];
     done[step] = true;
-    state = JobProgressState(
-      done: done,
-      activeStep: -1,
-      message: state.message,
-    );
+    _emit(JobProgressState(done: done, activeStep: -1, message: prev.message));
   }
 
   void _progress(double value, String message) {
-    state = JobProgressState(
-      done: [...state.done],
-      activeStep: state.activeStep,
+    final prev = _live ?? _queued;
+    _emit(JobProgressState(
+      done: [...prev.done],
+      activeStep: prev.activeStep,
       message: message,
       progress: value,
-    );
+    ));
   }
 
   void _message(String message) {
-    state = JobProgressState(
-      done: [...state.done],
-      activeStep: state.activeStep,
+    final prev = _live ?? _queued;
+    _emit(JobProgressState(
+      done: [...prev.done],
+      activeStep: prev.activeStep,
       message: message,
-    );
+    ));
   }
 
   void _allDone(String message) {
-    state = JobProgressState(
+    _emit(JobProgressState(
       done: List.filled(7, true),
       activeStep: -1,
       message: message,
       progress: 1.0,
-    );
+    ));
   }
 
   void _error(String message) {
-    state = JobProgressState(
-      done: [...state.done],
+    final prev = _live ?? _queued;
+    _emit(JobProgressState(
+      done: [...prev.done],
       activeStep: -1,
       message: message,
       progress: 1.0,
-    );
+    ));
+  }
+
+  void _emit(JobProgressState next) {
+    _live = next;
+    state = next;
   }
 }
 
