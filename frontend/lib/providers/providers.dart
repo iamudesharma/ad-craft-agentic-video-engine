@@ -88,6 +88,9 @@ class JobController extends AutoDisposeFamilyNotifier<JobDetail, String> {
       case 'storyboard_produced':
         if (board != null) state = state.copyWith(storyboard: board);
         break;
+      case 'storyboard_updated':
+        if (board != null) state = state.copyWith(storyboard: board);
+        break;
       case 'hitl_pending':
         if (board != null) {
           state = state.copyWith(status: 'awaiting_approval', storyboard: board);
@@ -166,6 +169,8 @@ class AgentTerminalController
       case 'storyboard_produced':
         final scenes = (payload?['storyboard'] as Map<String, dynamic>?)?['scenes'];
         _add('storyboard produced (${scenes is List ? scenes.length : '?'} scenes)');
+      case 'storyboard_updated':
+        _add('storyboard updated from your edits');
       case 'prompts_optimized':
         _add('visual prompts optimized');
       case 'hitl_pending':

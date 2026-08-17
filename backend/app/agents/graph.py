@@ -18,6 +18,14 @@ def route_after_hitl(state: AgentWorkflowState) -> str:
     return "quality_checker"
 
 
+def route_from_start(state: AgentWorkflowState) -> str:
+    # A storyboard already present (user-edited regeneration) skips planning
+    # and prompt optimization: use the edited scenes exactly as-is.
+    if state.get("storyboard"):
+        return "quality_checker"
+    return "planner"
+
+
 def build_workflow():
     workflow = StateGraph(AgentWorkflowState)
     workflow.add_node("planner", storyboard_planner_node)
@@ -27,7 +35,11 @@ def build_workflow():
     workflow.add_node("ingest_assets", ingest_assets_node)
     workflow.add_node("render_video", render_video_node)
 
-    workflow.add_edge(START, "planner")
+    workflow.add_conditional_edges(
+        START,
+        route_from_start,
+        {"planner": "planner", "quality_checker": "quality_checker"},
+    )
     workflow.add_edge("planner", "prompt_engine")
     workflow.add_edge("prompt_engine", "hitl_checkpoint")
     workflow.add_conditional_edges(

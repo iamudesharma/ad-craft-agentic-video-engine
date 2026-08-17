@@ -1,3 +1,50 @@
+class BrandGuidelines {
+  const BrandGuidelines({
+    this.brandName,
+    this.tagline,
+    this.toneOfVoice,
+    this.colors,
+    this.typography,
+    this.visualStyle,
+    this.doList,
+    this.dontList,
+    this.targetAudience,
+  });
+
+  final String? brandName;
+  final String? tagline;
+  final String? toneOfVoice;
+  final List<String>? colors;
+  final String? typography;
+  final String? visualStyle;
+  final List<String>? doList;
+  final List<String>? dontList;
+  final String? targetAudience;
+
+  bool get isEmpty =>
+      brandName == null &&
+      tagline == null &&
+      toneOfVoice == null &&
+      colors == null &&
+      typography == null &&
+      visualStyle == null &&
+      doList == null &&
+      dontList == null &&
+      targetAudience == null;
+
+  Map<String, dynamic> toJson() => {
+        if (brandName != null) 'brand_name': brandName,
+        if (tagline != null) 'tagline': tagline,
+        if (toneOfVoice != null) 'tone_of_voice': toneOfVoice,
+        if (colors != null) 'colors': colors,
+        if (typography != null) 'typography': typography,
+        if (visualStyle != null) 'visual_style': visualStyle,
+        if (doList != null) 'do_list': doList,
+        if (dontList != null) 'dont_list': dontList,
+        if (targetAudience != null) 'target_audience': targetAudience,
+      };
+}
+
 class JobSummary {
   const JobSummary({
     required this.jobId,
@@ -51,13 +98,14 @@ class Scene {
       };
 
   Scene copyWith({
+    int? sceneId,
     String? narration,
     String? visualPrompt,
     int? durationSeconds,
     String? captionText,
   }) =>
       Scene(
-        sceneId: sceneId,
+        sceneId: sceneId ?? this.sceneId,
         narration: narration ?? this.narration,
         visualPrompt: visualPrompt ?? this.visualPrompt,
         durationSeconds: durationSeconds ?? this.durationSeconds,

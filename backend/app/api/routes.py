@@ -7,9 +7,16 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from app.jobs import TERMINAL_EVENTS, approve_job, start_job, subscribe, unsubscribe
+from app.jobs import (
+    TERMINAL_EVENTS,
+    approve_job,
+    regenerate_job,
+    start_job,
+    subscribe,
+    unsubscribe,
+)
 from app.pb import get_job, list_jobs
-from app.schemas.storyboard import ApproveRequest, GenerateRequest
+from app.schemas.storyboard import ApproveRequest, GenerateRequest, RegenerateRequest
 
 log = logging.getLogger("api")
 
@@ -111,8 +118,19 @@ async def stream_job(job_id: str):
 
 @router.post("/jobs/{job_id}/approve")
 async def approve(job_id: str, request: ApproveRequest):
-    await approve_job(job_id, request.decision, request.feedback)
+    storyboard = request.storyboard.model_dump() if request.storyboard is not None else None
+    if storyboard is not None and not 3 <= len(storyboard["scenes"]) <= 8:
+        raise HTTPException(status_code=422, detail="Storyboard must have 3-8 scenes")
+    await approve_job(job_id, request.decision, request.feedback, storyboard)
     return {"status": "ok", "decision": request.decision}
+
+
+@router.post("/jobs/{job_id}/regenerate", status_code=202)
+async def regenerate(job_id: str, request: RegenerateRequest):
+    if not 3 <= len(request.storyboard.scenes) <= 8:
+        raise HTTPException(status_code=422, detail="Storyboard must have 3-8 scenes")
+    await regenerate_job(job_id, request.storyboard)
+    return {"status": "ok", "job_id": job_id}
 
 
 @router.get("/jobs/{job_id}/video")
