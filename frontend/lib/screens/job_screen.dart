@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -110,10 +111,18 @@ class JobScreen extends ConsumerWidget {
   }
 }
 
-class _StoryboardPane extends ConsumerWidget {
+class _StoryboardPane extends ConsumerStatefulWidget {
   const _StoryboardPane({required this.job});
 
   final JobDetail job;
+
+  @override
+  ConsumerState<_StoryboardPane> createState() => _StoryboardPaneState();
+}
+
+class _StoryboardPaneState extends ConsumerState<_StoryboardPane> {
+  Storyboard? _edited;
+  bool _regenerating = false;
 
   static const Set<String> _editableStatuses = {
     'awaiting_approval',
@@ -122,20 +131,111 @@ class _StoryboardPane extends ConsumerWidget {
     'rejected',
   };
 
+  static const Set<String> _terminalStatuses = {
+    'completed',
+    'failed',
+    'rejected',
+  };
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final job = widget.job;
+    final status = job.status;
+    final dirtyHint = status == 'awaiting_approval'
+        ? 'Edits and scene order are applied when you approve'
+        : 'Edits and scene order are applied when you regenerate';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (job.status == 'awaiting_approval') _ApproveCard(job: job),
+        if (status == 'awaiting_approval')
+          _ApproveCard(job: job, storyboard: _edited),
+        if (_terminalStatuses.contains(status) && job.storyboard != null)
+          _RegenerateCard(
+            job: job,
+            busy: _regenerating,
+            onPressed: _regenerate,
+          ),
         Expanded(
           child: StoryboardEditor(
             jobId: job.jobId,
             storyboard: job.storyboard,
-            enabled: _editableStatuses.contains(job.status),
+            enabled: _editableStatuses.contains(status),
+            dirtyHint: dirtyHint,
+            onStoryboardChanged: (board) => setState(() => _edited = board),
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _regenerate() async {
+    final board = _edited ?? widget.job.storyboard;
+    if (board == null) {
+      return;
+    }
+    setState(() => _regenerating = true);
+    try {
+      await ref.read(repositoryProvider).regenerate(widget.job.jobId, board);
+      if (mounted) {
+        // Remount the screen so fresh SSE/polling providers pick up the
+        // new run (the previous stream ended at job_done and won't restart).
+        context.pushReplacement('/jobs/${widget.job.jobId}');
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Regenerate failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _regenerating = false);
+      }
+    }
+  }
+}
+
+class _RegenerateCard extends StatelessWidget {
+  const _RegenerateCard({
+    required this.job,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final JobDetail job;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.teal.withValues(alpha: 0.10),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Job finished - edit the storyboard or reorder scenes, then regenerate',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: busy ? null : onPressed,
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: const Text('Regenerate scenes & video'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -160,9 +260,10 @@ class _VideoPane extends ConsumerWidget {
 }
 
 class _ApproveCard extends ConsumerStatefulWidget {
-  const _ApproveCard({required this.job});
+  const _ApproveCard({required this.job, this.storyboard});
 
   final JobDetail job;
+  final Storyboard? storyboard;
 
   @override
   ConsumerState<_ApproveCard> createState() => _ApproveCardState();
@@ -186,6 +287,7 @@ class _ApproveCardState extends ConsumerState<_ApproveCard> {
             widget.job.jobId,
             approved: approved,
             feedback: _feedbackController.text.trim(),
+            storyboard: widget.storyboard,
           );
       setState(() => _sent = approved ? 'Approval sent...' : 'Rejected');
     } catch (error) {

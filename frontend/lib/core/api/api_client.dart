@@ -20,7 +20,7 @@ class ApiRepository {
 
   Future<String> generate({
     required String prompt,
-    String? brandGuidelines,
+    BrandGuidelines? brandGuidelines,
     String aspectRatio = '9:16',
     bool? hitlEnabled,
   }) async {
@@ -29,9 +29,8 @@ class ApiRepository {
       'aspect_ratio': aspectRatio,
       'hitl_enabled': ?hitlEnabled,
     };
-    final brand = (brandGuidelines ?? '').trim();
-    if (brand.isNotEmpty) {
-      data['brand_guidelines'] = brand;
+    if (brandGuidelines != null && !brandGuidelines.isEmpty) {
+      data['brand_guidelines'] = brandGuidelines.toJson();
     }
     final response = await _dio.post('/api/v1/generate', data: data);
     return (response.data as Map<String, dynamic>)['job_id'] as String;
@@ -41,11 +40,22 @@ class ApiRepository {
     String jobId, {
     required bool approved,
     String? feedback,
+    Storyboard? storyboard,
   }) async {
     final resolvedFeedback = (feedback == null || feedback.isEmpty) ? null : feedback;
-    await _dio.post('/api/v1/jobs/$jobId/approve', data: {
+    final data = <String, dynamic>{
       'decision': approved ? 'approved' : 'rejected',
       'feedback': resolvedFeedback,
+    };
+    if (storyboard != null) {
+      data['storyboard'] = storyboard.toJson();
+    }
+    await _dio.post('/api/v1/jobs/$jobId/approve', data: data);
+  }
+
+  Future<void> regenerate(String jobId, Storyboard storyboard) async {
+    await _dio.post('/api/v1/jobs/$jobId/regenerate', data: {
+      'storyboard': storyboard.toJson(),
     });
   }
 

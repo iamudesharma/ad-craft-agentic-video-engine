@@ -10,11 +10,15 @@ class StoryboardEditor extends StatefulWidget {
     required this.jobId,
     required this.storyboard,
     this.enabled = true,
+    this.dirtyHint,
+    this.onStoryboardChanged,
   });
 
   final String jobId;
   final Storyboard? storyboard;
   final bool enabled;
+  final String? dirtyHint;
+  final ValueChanged<Storyboard>? onStoryboardChanged;
 
   @override
   State<StoryboardEditor> createState() => _StoryboardEditorState();
@@ -53,11 +57,15 @@ class _StoryboardEditorState extends State<StoryboardEditor> {
       return;
     }
     _scenes = board.scenes.map((s) => s).toList();
+    _rebuildControllers();
+  }
+
+  void _rebuildControllers() {
     for (final controller in _controllers.values) {
       controller.dispose();
     }
     _controllers.clear();
-    for (final scene in board.scenes) {
+    for (final scene in _scenes ?? []) {
       _controllers[scene.sceneId] = TextEditingController(text: scene.narration);
       _controllers[scene.sceneId * 1000 + 1] =
           TextEditingController(text: scene.captionText);
@@ -74,6 +82,47 @@ class _StoryboardEditorState extends State<StoryboardEditor> {
       _dirty = true;
       _scenes![index] = scene;
     });
+    _emitStoryboard();
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (!widget.enabled || _scenes == null) {
+      return;
+    }
+    setState(() {
+      final scene = _scenes!.removeAt(oldIndex);
+      _scenes!.insert(newIndex, scene);
+      _renumberScenes();
+    });
+    _emitStoryboard();
+  }
+
+  /// Re-assign 0-indexed scene ids after a reorder. Controllers hold the
+  /// edited text and travel with their scene, so remap them to the new ids.
+  void _renumberScenes() {
+    final oldControllers = Map<int, TextEditingController>.from(_controllers);
+    _controllers.clear();
+    for (var i = 0; i < _scenes!.length; i++) {
+      final oldId = _scenes![i].sceneId;
+      _scenes![i] = _scenes![i].copyWith(sceneId: i);
+      _controllers[i] = oldControllers[oldId]!;
+      _controllers[i * 1000 + 1] = oldControllers[oldId * 1000 + 1]!;
+      _controllers[i * 1000 + 2] = oldControllers[oldId * 1000 + 2]!;
+    }
+    _dirty = true;
+  }
+
+  void _emitStoryboard() {
+    final board = widget.storyboard;
+    if (board == null || _scenes == null) {
+      return;
+    }
+    widget.onStoryboardChanged?.call(Storyboard(
+      title: board.title,
+      targetAudience: board.targetAudience,
+      aspectRatio: board.aspectRatio,
+      scenes: List.of(_scenes!),
+    ));
   }
 
   @override
@@ -113,12 +162,12 @@ class _StoryboardEditorState extends State<StoryboardEditor> {
             ],
           ),
         ),
-        if (_dirty)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+        if (_dirty && widget.dirtyHint != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
             child: Text(
-              'Local edits - regenerate the job to persist them',
-              style: TextStyle(fontSize: 11, color: Colors.orangeAccent),
+              widget.dirtyHint!,
+              style: const TextStyle(fontSize: 11, color: Colors.orangeAccent),
             ),
           ),
         if (!widget.enabled)
@@ -130,19 +179,24 @@ class _StoryboardEditorState extends State<StoryboardEditor> {
             ),
           ),
         Expanded(
-          child: ListView.builder(
+          child: ReorderableListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: scenes.length,
-            itemBuilder: (context, index) => _SceneCard(
-              scene: scenes[index],
-              jobId: widget.jobId,
-              enabled: widget.enabled,
-              narrationController: _controller(scenes[index].sceneId),
-              captionController: _controller(scenes[index].sceneId * 1000 + 1),
-              promptController: _controller(scenes[index].sceneId * 1000 + 2),
-              onChanged: (scene) => _updateScene(index, scene),
-            ),
-          ),
+            itemBuilder: (context, index) {
+              final scene = scenes[index];
+              return _SceneCard(
+                key: ValueKey(scene.sceneId),
+                scene: scene,
+                jobId: widget.jobId,
+                enabled: widget.enabled,
+                index: index,
+                narrationController: _controller(scenes[index].sceneId),
+                captionController: _controller(scenes[index].sceneId * 1000 + 1),
+                promptController: _controller(scenes[index].sceneId * 1000 + 2),
+                onChanged: (scene) => _updateScene(index, scene),
+              );
+            },
+            onReorderItem: _onReorder,          ),
         ),
       ],
     );
@@ -151,9 +205,11 @@ class _StoryboardEditorState extends State<StoryboardEditor> {
 
 class _SceneCard extends StatelessWidget {
   const _SceneCard({
+    super.key,
     required this.scene,
     required this.jobId,
     required this.enabled,
+    required this.index,
     required this.narrationController,
     required this.captionController,
     required this.promptController,
@@ -163,6 +219,7 @@ class _SceneCard extends StatelessWidget {
   final Scene scene;
   final String jobId;
   final bool enabled;
+  final int index;
   final TextEditingController narrationController;
   final TextEditingController captionController;
   final TextEditingController promptController;
@@ -221,6 +278,16 @@ class _SceneCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (enabled) ...[
+                  const SizedBox(width: 8),
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(Icons.drag_handle, size: 20),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 10),

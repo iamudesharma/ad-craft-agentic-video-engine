@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/providers.dart';
+import '../widgets/brand_guidelines_form.dart';
 import '../widgets/status_badge.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -14,7 +15,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _promptController = TextEditingController();
-  final _brandController = TextEditingController();
+  final _brandFormKey = GlobalKey<BrandGuidelinesFormState>();
   String _aspectRatio = '9:16';
   bool _hitlEnabled = true;
   bool _busy = false;
@@ -22,7 +23,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _promptController.dispose();
-    _brandController.dispose();
     super.dispose();
   }
 
@@ -36,13 +36,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final jobId = await ref.read(repositoryProvider).generate(
             prompt: prompt,
-            brandGuidelines: _brandController.text.trim(),
+            brandGuidelines: _brandFormKey.currentState?.value,
             aspectRatio: _aspectRatio,
             hitlEnabled: _hitlEnabled,
           );
       if (mounted) {
         _promptController.clear();
-        _brandController.clear();
         context.push('/jobs/$jobId');
       }
     } catch (error) {
@@ -111,15 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _brandController,
-          enabled: !_busy,
-          decoration: const InputDecoration(
-            labelText: 'Brand guidelines (optional)',
-            hintText: 'e.g. warm tones, no cliches',
-            border: OutlineInputBorder(),
-          ),
-        ),
+        BrandGuidelinesForm(key: _brandFormKey, enabled: !_busy),
         const SizedBox(height: 16),
         const Text('Aspect ratio', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),

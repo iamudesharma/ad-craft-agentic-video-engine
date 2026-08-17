@@ -84,8 +84,32 @@ def _canned_storyboard(prompt: str, brand: str | None, aspect: str) -> dict:
     }
 
 
-def _brand_note(brand: str | None) -> str:
-    return f"\nBrand guidelines: {brand}" if brand else ""
+def _brand_section(brand) -> str:
+    """Format structured brand guidelines (dict) into a prompt block."""
+    if not brand:
+        return ""
+    if isinstance(brand, str):
+        return f"\nBrand guidelines: {brand}"
+    lines = ["\nBrand guidelines (apply strictly):"]
+    if brand.get("brand_name"):
+        lines.append(f"- Brand: {brand['brand_name']}")
+    if brand.get("tagline"):
+        lines.append(f"- Tagline / positioning: {brand['tagline']}")
+    if brand.get("tone_of_voice"):
+        lines.append(f"- Tone of voice: {brand['tone_of_voice']}")
+    if brand.get("colors"):
+        lines.append(f"- Color palette: {', '.join(brand['colors'])}")
+    if brand.get("typography"):
+        lines.append(f"- Typography: {brand['typography']}")
+    if brand.get("visual_style"):
+        lines.append(f"- Visual style: {brand['visual_style']}")
+    if brand.get("do_list"):
+        lines.append(f"- Always do: {'; '.join(brand['do_list'])}")
+    if brand.get("dont_list"):
+        lines.append(f"- Never do: {'; '.join(brand['dont_list'])}")
+    if brand.get("target_audience"):
+        lines.append(f"- Target audience: {brand['target_audience']}")
+    return "\n".join(lines)
 
 
 def _storyboard_from(state: AgentWorkflowState) -> Storyboard:
@@ -104,7 +128,7 @@ async def storyboard_planner_node(state: AgentWorkflowState) -> dict:
     else:
         user = (
             f"Creative brief: {prompt}"
-            f"{_brand_note(brand)}"
+            f"{_brand_section(brand)}"
             f"\nAspect ratio: {aspect}. Produce the full storyboard JSON now."
         )
         data = await llm_json(
@@ -128,6 +152,7 @@ async def prompt_engine_node(state: AgentWorkflowState) -> dict:
         user = (
             f"Scene family prompt reference: {storyboard.scenes[0].visual_prompt}\n"
             f"Rewrite this visual prompt: {scene['visual_prompt']}"
+            f"{_brand_section(state.get('brand_guidelines'))}"
         )
         data = await llm_json(PROMPT_DIALS_SYSTEM, user, label="prompt_engine")
         return data["visual_prompt"]
@@ -170,6 +195,12 @@ async def hitl_checkpoint_node(state: AgentWorkflowState) -> dict:
     feedback = approval.get("feedback") if isinstance(approval, dict) else None
     if decision != "approved":
         return {"status": "rejected", "error": feedback or "Storyboard rejected by user", "approval": approval}
+
+    override = approval.get("storyboard") if isinstance(approval, dict) else None
+    if override:
+        edited = Storyboard.model_validate(override)
+        ctx.emit({"type": "storyboard_updated", "storyboard": edited.model_dump()})
+        return {"storyboard": edited.model_dump(), "status": "approved", "approval": approval}
     return {"status": "approved", "approval": approval}
 
 

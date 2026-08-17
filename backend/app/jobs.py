@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections import deque
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from app.agents.graph import build_workflow
 from app.agents.state import AgentWorkflowState
 from app.config import get_settings
 from app.pb import create_job, get_job, list_jobs, update_job
-from app.schemas.storyboard import GenerateRequest
+from app.schemas.storyboard import GenerateRequest, Storyboard
 
 log = logging.getLogger("jobs")
 
@@ -104,6 +105,8 @@ async def _handle_event(job_id: str, event: dict) -> None:
         payload_type = payload.get("type")
         if payload_type == "storyboard_produced":
             await _persist(job_id, storyboard=payload["storyboard"])
+        elif payload_type == "storyboard_updated":
+            await _persist(job_id, storyboard=payload["storyboard"])
         elif payload_type == "video_rendered":
             await _persist(job_id, video=payload["video_path"])
         emit(job_id, payload)
@@ -114,14 +117,20 @@ async def _handle_event(job_id: str, event: dict) -> None:
 
 
 def _state_input(job: dict) -> AgentWorkflowState:
+    brand_guidelines = job.get("brand_guidelines")
+    if isinstance(brand_guidelines, str):
+        try:
+            brand_guidelines = json.loads(brand_guidelines)
+        except (json.JSONDecodeError, TypeError):
+            brand_guidelines = None
     return {
         "job_id": job["id"],
         "user_prompt": job["user_prompt"],
-        "brand_guidelines": job.get("brand_guidelines"),
+        "brand_guidelines": brand_guidelines,
         "aspect_ratio": job.get("aspect_ratio", "9:16"),
         "hitl_enabled": bool(job.get("hitl_enabled", True)),
         "status": "running",
-        "storyboard": None,
+        "storyboard": job.get("storyboard") or None,
         "qc_report": None,
         "render_items": [],
         "image_paths": [],
@@ -191,7 +200,11 @@ async def start_job(request: GenerateRequest) -> dict:
     record = await create_job(
         {
             "user_prompt": request.prompt,
-            "brand_guidelines": request.brand_guidelines,
+            "brand_guidelines": (
+                json.dumps(request.brand_guidelines.model_dump())
+                if request.brand_guidelines is not None and not request.brand_guidelines.is_empty()
+                else None
+            ),
             "aspect_ratio": request.aspect_ratio,
             "hitl_enabled": (
                 request.hitl_enabled
@@ -216,7 +229,9 @@ async def start_job(request: GenerateRequest) -> dict:
     return record
 
 
-async def approve_job(job_id: str, decision: str, feedback: str | None) -> None:
+async def approve_job(
+    job_id: str, decision: str, feedback: str | None, storyboard: dict | None = None
+) -> None:
     record = await get_job(job_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -225,8 +240,37 @@ async def approve_job(job_id: str, decision: str, feedback: str | None) -> None:
 
     emit(job_id, {"type": "approval_received", "decision": decision, "feedback": feedback})
     await _persist(job_id, status="running")
-    payload = {"decision": decision, "feedback": feedback}
+    payload: dict = {"decision": decision, "feedback": feedback}
+    if storyboard is not None:
+        payload["storyboard"] = storyboard
     task = asyncio.create_task(_execute(job_id, Command(resume=payload)))
+    _jobs[job_id] = task
+
+
+async def regenerate_job(job_id: str, storyboard: Storyboard) -> None:
+    """Re-run production (QC -> assets -> render) from a user-edited storyboard."""
+    record = await get_job(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if record.get("status") not in {"completed", "failed", "rejected"}:
+        raise HTTPException(
+            status_code=409, detail="Only finished jobs can be regenerated"
+        )
+
+    await _persist(job_id, status="running", storyboard=storyboard.model_dump())
+    await update_job(job_id, {"error": None})
+    # Drop stale buffered events so SSE subscribers don't replay the previous
+    # run's terminal events before the new run's progress.
+    _buffers[job_id] = deque(maxlen=2000)
+    register_context(
+        job_id,
+        JobContext(
+            job_id=job_id,
+            emit=lambda event, _jid=job_id: emit(_jid, event),
+            settings=get_settings(),
+        ),
+    )
+    task = asyncio.create_task(_execute(job_id, _state_input(record)))
     _jobs[job_id] = task
 
 
