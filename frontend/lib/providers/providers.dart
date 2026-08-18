@@ -167,13 +167,210 @@ final sseStreamProvider = StreamProvider.autoDispose
   yield* client.stream;
 });
 
-final jobListProvider = StreamProvider.autoDispose<List<JobSummary>>((ref) async* {
-  final repository = ref.watch(repositoryProvider);
-  while (true) {
-    yield await repository.listJobs();
-    await Future<void>.delayed(const Duration(seconds: 5));
+class JobListState {
+  const JobListState({
+    this.items = const [],
+    this.total = 0,
+    this.page = 1,
+    this.loading = false,
+    this.loadingMore = false,
+    this.error,
+    this.query = '',
+    this.statusFilter,
+    this.aspectFilter,
+    this.favoritesOnly = false,
+  });
+
+  final List<JobSummary> items;
+  final int total;
+  final int page;
+  final bool loading;
+  final bool loadingMore;
+  final String? error;
+  final String query;
+  final String? statusFilter;
+  final String? aspectFilter;
+  final bool favoritesOnly;
+
+  bool get hasMore => items.length < total;
+  bool get hasActiveFilters =>
+      query.isNotEmpty ||
+      statusFilter != null ||
+      aspectFilter != null ||
+      favoritesOnly;
+
+  JobListState copyWith({
+    List<JobSummary>? items,
+    int? total,
+    int? page,
+    bool? loading,
+    bool? loadingMore,
+    String? error,
+  }) =>
+      JobListState(
+        items: items ?? this.items,
+        total: total ?? this.total,
+        page: page ?? this.page,
+        loading: loading ?? this.loading,
+        loadingMore: loadingMore ?? this.loadingMore,
+        error: error ?? this.error,
+        query: query,
+        statusFilter: statusFilter,
+        aspectFilter: aspectFilter,
+        favoritesOnly: favoritesOnly,
+      );
+}
+
+class JobListController extends Notifier<JobListState> {
+  Timer? _pollTimer;
+
+  @override
+  JobListState build() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_poll());
+    });
+    ref.onDispose(() => _pollTimer?.cancel());
+    Future<void>.microtask(_load);
+    return const JobListState(loading: true);
   }
-});
+
+  void applyFilters({
+    String query = '',
+    String? status,
+    String? aspect,
+    bool favoritesOnly = false,
+  }) {
+    state = JobListState(
+      query: query,
+      statusFilter: status,
+      aspectFilter: aspect,
+      favoritesOnly: favoritesOnly,
+      loading: true,
+    );
+    _load();
+  }
+
+  Future<void> _load() async {
+    final s = state;
+    try {
+      final page = await ref.read(repositoryProvider).listJobs(
+            page: s.page,
+            perPage: 20,
+            status: s.statusFilter,
+            aspectRatio: s.aspectFilter,
+            query: s.query.isEmpty ? null : s.query,
+            favoritesOnly: s.favoritesOnly,
+          );
+      state = s.copyWith(
+        items: page.items,
+        total: page.total,
+        loading: false,
+        error: null,
+      );
+    } catch (error) {
+      state = s.copyWith(loading: false, error: '$error');
+    }
+  }
+
+  Future<void> loadMore() async {
+    final s = state;
+    if (s.loading || s.loadingMore || !s.hasMore) {
+      return;
+    }
+    state = s.copyWith(loadingMore: true);
+    try {
+      final page = await ref.read(repositoryProvider).listJobs(
+            page: s.page + 1,
+            perPage: 20,
+            status: s.statusFilter,
+            aspectRatio: s.aspectFilter,
+            query: s.query.isEmpty ? null : s.query,
+            favoritesOnly: s.favoritesOnly,
+          );
+      final known = s.items.map((j) => j.jobId).toSet();
+      final combined = [
+        ...s.items,
+        ...page.items.where((j) => !known.contains(j.jobId)),
+      ];
+      state = s.copyWith(
+        items: combined,
+        total: page.total,
+        page: page.page,
+        loadingMore: false,
+        error: null,
+      );
+    } catch (error) {
+      state = s.copyWith(loadingMore: false, error: '$error');
+    }
+  }
+
+  Future<void> toggleFavorite(String jobId) async {
+    final index = state.items.indexWhere((j) => j.jobId == jobId);
+    if (index < 0) {
+      return;
+    }
+    final job = state.items[index];
+    final target = !job.favorite;
+    _patchFavorite(index, job.copyWith(favorite: target));
+    try {
+      final confirmed =
+          await ref.read(repositoryProvider).setFavorite(jobId, target);
+      if (confirmed != target) {
+        _patchFavorite(index, job.copyWith(favorite: confirmed));
+      }
+    } catch (_) {
+      _patchFavorite(index, job);
+    }
+  }
+
+  void _patchFavorite(int index, JobSummary job) {
+    final items = [...state.items];
+    items[index] = job;
+    state = state.copyWith(items: items);
+  }
+
+  void addJob(String jobId) {
+    final s = state;
+    if (s.hasActiveFilters || s.items.any((j) => j.jobId == jobId)) {
+      return;
+    }
+    state = s.copyWith(
+      items: [
+        JobSummary(
+          jobId: jobId,
+          status: 'pending',
+          aspectRatio: '9:16',
+          createdAt: DateTime.now(),
+        ),
+        ...s.items,
+      ],
+      total: s.total + 1,
+    );
+  }
+
+  Future<void> _poll() async {
+    final s = state;
+    if (s.hasActiveFilters || s.loading || s.loadingMore) {
+      return;
+    }
+    try {
+      final page = await ref.read(repositoryProvider).listJobs(page: 1, perPage: 20);
+      state = s.copyWith(
+        items: page.items,
+        total: page.total,
+        page: 1,
+        loading: false,
+        error: null,
+      );
+    } catch (error) {
+      state = s.copyWith(error: '$error');
+    }
+  }
+}
+
+final jobListControllerProvider =
+    NotifierProvider<JobListController, JobListState>(JobListController.new);
 
 class JobController extends AutoDisposeFamilyNotifier<JobDetail, String> {
   Timer? _pollTimer;

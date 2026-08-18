@@ -173,7 +173,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildJobList(BuildContext context) {
-    final jobs = ref.watch(jobListProvider);
+    final state = ref.watch(jobListControllerProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -185,36 +185,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         Expanded(
-          child: jobs.when(
-            data: (items) => items.isEmpty
-                ? const Center(child: Text('No jobs yet - generate one'))
-                : ListView.separated(
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final job = items[index];
-                      return ListTile(
-                        leading: StatusBadge(status: job.status),
-                        title: Text('#${job.jobId.substring(0, 8)}'),
-                        subtitle: Text(
-                          '${job.aspectRatio}  |  ${job.createdAt.toLocal()}',
+          child: state.loading
+              ? const Center(child: CircularProgressIndicator())
+              : state.error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Cannot reach backend at the configured API base URL.\n${state.error}',
+                          textAlign: TextAlign.center,
                         ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/jobs/${job.jobId}'),
-                      );
-                    },
-                  ),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Cannot reach backend at the configured API base URL.\n$error',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
+                      ),
+                    )
+                  : state.items.isEmpty
+                      ? const Center(child: Text('No jobs yet - generate one'))
+                      : ListView.separated(
+                          itemCount: state.items.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final job = state.items[index];
+                            return ListTile(
+                              leading: StatusBadge(status: job.status),
+                              title: Text('#${job.jobId.substring(0, 8)}'),
+                              subtitle: Text(
+                                '${job.aspectRatio}  |  ${job.createdAt.toLocal()}',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () => context.push('/jobs/${job.jobId}'),
+                            );
+                          },
+                        ),
         ),
       ],
     );
