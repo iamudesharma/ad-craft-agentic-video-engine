@@ -223,6 +223,7 @@ class JobListState {
 
 class JobListController extends Notifier<JobListState> {
   Timer? _pollTimer;
+  int _generation = 0;
 
   @override
   JobListState build() {
@@ -248,11 +249,13 @@ class JobListController extends Notifier<JobListState> {
       favoritesOnly: favoritesOnly,
       loading: true,
     );
+    _generation++;
     _load();
   }
 
   Future<void> _load() async {
     final s = state;
+    final gen = _generation;
     try {
       final page = await ref.read(repositoryProvider).listJobs(
             page: s.page,
@@ -262,6 +265,9 @@ class JobListController extends Notifier<JobListState> {
             query: s.query.isEmpty ? null : s.query,
             favoritesOnly: s.favoritesOnly,
           );
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(
         items: page.items,
         total: page.total,
@@ -269,12 +275,16 @@ class JobListController extends Notifier<JobListState> {
         error: null,
       );
     } catch (error) {
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(loading: false, error: '$error');
     }
   }
 
   Future<void> loadMore() async {
     final s = state;
+    final gen = _generation;
     if (s.loading || s.loadingMore || !s.hasMore) {
       return;
     }
@@ -288,6 +298,9 @@ class JobListController extends Notifier<JobListState> {
             query: s.query.isEmpty ? null : s.query,
             favoritesOnly: s.favoritesOnly,
           );
+      if (gen != _generation) {
+        return;
+      }
       final known = s.items.map((j) => j.jobId).toSet();
       final combined = [
         ...s.items,
@@ -351,20 +364,25 @@ class JobListController extends Notifier<JobListState> {
 
   Future<void> _poll() async {
     final s = state;
-    if (s.hasActiveFilters || s.loading || s.loadingMore) {
+    final gen = _generation;
+    if (s.page > 1 || s.hasActiveFilters || s.loading || s.loadingMore) {
       return;
     }
     try {
       final page = await ref.read(repositoryProvider).listJobs(page: 1, perPage: 20);
+      if (gen != _generation || state.page > 1 || state.hasActiveFilters) {
+        return;
+      }
       state = s.copyWith(
         items: page.items,
         total: page.total,
-        page: 1,
         loading: false,
         error: null,
       );
     } catch (error) {
-      state = s.copyWith(error: '$error');
+      if (gen == _generation && state.page == 1) {
+        state = s.copyWith(error: '$error');
+      }
     }
   }
 }
