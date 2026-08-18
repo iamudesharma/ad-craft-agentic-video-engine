@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/providers.dart';
 import '../widgets/brand_guidelines_form.dart';
-import '../widgets/status_badge.dart';
+import '../widgets/job_list.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -42,6 +42,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
       if (mounted) {
         _promptController.clear();
+        ref.read(jobListControllerProvider.notifier).addJob(jobId);
         context.push('/jobs/$jobId');
       }
     } catch (error) {
@@ -89,19 +90,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 1000;
           final form = _buildForm(context);
-          final list = _buildJobList(context);
           if (wide) {
             return Row(
               children: [
                 SizedBox(width: 400, child: form),
                 const VerticalDivider(width: 1),
-                Expanded(child: list),
+                const Expanded(child: JobListSection()),
               ],
             );
           }
           return ListView(
             padding: const EdgeInsets.all(16),
-            children: [form, const SizedBox(height: 16), list],
+            children: [
+              form,
+              const SizedBox(height: 16),
+              const SizedBox(height: 420, child: JobListSection()),
+            ],
           );
         },
       ),
@@ -167,54 +171,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 )
               : const Icon(Icons.play_arrow),
           label: const Text('Generate ad'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildJobList(BuildContext context) {
-    final state = ref.watch(jobListControllerProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            'Jobs',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        Expanded(
-          child: state.loading
-              ? const Center(child: CircularProgressIndicator())
-              : state.error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Cannot reach backend at the configured API base URL.\n${state.error}',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
-                  : state.items.isEmpty
-                      ? const Center(child: Text('No jobs yet - generate one'))
-                      : ListView.separated(
-                          itemCount: state.items.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final job = state.items[index];
-                            return ListTile(
-                              leading: StatusBadge(status: job.status),
-                              title: Text('#${job.jobId.substring(0, 8)}'),
-                              subtitle: Text(
-                                '${job.aspectRatio}  |  ${job.createdAt.toLocal()}',
-                              ),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => context.push('/jobs/${job.jobId}'),
-                            );
-                          },
-                        ),
         ),
       ],
     );
