@@ -69,6 +69,10 @@ class RegenerateRequest(BaseModel):
     storyboard: Storyboard = Field(description="User-edited storyboard to regenerate from")
 
 
+class DuplicateRequest(BaseModel):
+    mode: Literal["brief", "storyboard"]
+
+
 class FavoriteRequest(BaseModel):
     favorite: bool
 

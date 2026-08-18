@@ -12,6 +12,7 @@ from app.auth import current_user, login, signup
 from app.jobs import (
     TERMINAL_EVENTS,
     approve_job,
+    duplicate_job,
     regenerate_job,
     start_job,
     subscribe,
@@ -20,6 +21,7 @@ from app.jobs import (
 from app.pb import get_job, list_org_jobs, set_job_favorite
 from app.schemas.storyboard import (
     ApproveRequest,
+    DuplicateRequest,
     FavoriteRequest,
     GenerateRequest,
     RegenerateRequest,
@@ -324,6 +326,18 @@ async def regenerate(job_id: str, request: RegenerateRequest, user: dict = Depen
         raise HTTPException(status_code=422, detail="Storyboard must have 3-8 scenes")
     await regenerate_job(job_id, request.storyboard)
     return {"status": "ok", "job_id": job_id}
+
+
+@router.post("/jobs/{job_id}/duplicate", status_code=202)
+async def duplicate(job_id: str, body: DuplicateRequest, user: dict = Depends(current_user)):
+    record = await _get_job(job_id)
+    org, _ = await orgs.require_org_access(user)
+    if _job_org_id(record) != org["id"]:
+        raise HTTPException(status_code=404, detail="Job not found")
+    new_id = await duplicate_job(
+        job_id, body.mode, org_id=org["id"], created_by=user["id"]
+    )
+    return {"job_id": new_id}
 
 
 @router.get("/jobs/{job_id}/video")

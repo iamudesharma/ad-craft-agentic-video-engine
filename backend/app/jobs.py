@@ -278,6 +278,48 @@ async def regenerate_job(job_id: str, storyboard: Storyboard) -> None:
     _jobs[job_id] = task
 
 
+async def duplicate_job(
+    job_id: str, mode: str, *, org_id: str, created_by: str
+) -> str:
+    record = await get_job(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    settings = get_settings()
+    data: dict = {
+        "user_prompt": record.get("user_prompt") or "",
+        "brand_guidelines": record.get("brand_guidelines"),
+        "aspect_ratio": record.get("aspect_ratio", "9:16"),
+        "hitl_enabled": settings.hitl_required,
+        "status": "pending",
+        "org_id": org_id,
+        "created_by": created_by,
+    }
+    if mode == "storyboard":
+        storyboard = record.get("storyboard")
+        if not storyboard:
+            raise HTTPException(
+                status_code=422, detail="Source job has no storyboard to clone"
+            )
+        data["storyboard"] = storyboard
+    elif mode != "brief":
+        raise HTTPException(
+            status_code=422, detail="mode must be 'brief' or 'storyboard'"
+        )
+    new_record = await create_job(data)
+    new_id = new_record["id"]
+    register_context(
+        new_id,
+        JobContext(
+            job_id=new_id,
+            emit=lambda event, _jid=new_id: emit(_jid, event),
+            settings=settings,
+        ),
+    )
+    task = asyncio.create_task(_execute(new_id, _state_input(new_record)))
+    _jobs[new_id] = task
+    return new_id
+
+
 async def recover_stale_jobs() -> int:
     """Mark jobs left pending/running by a previous backend process as failed."""
     stale = await list_jobs(
