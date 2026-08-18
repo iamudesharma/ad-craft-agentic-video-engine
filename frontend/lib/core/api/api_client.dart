@@ -117,10 +117,40 @@ class ApiRepository {
     await _dio.delete('/api/v1/orgs/me/members/$memberId');
   }
 
-  Future<List<JobSummary>> listJobs() async {
-    final response = await _dio.get('/api/v1/jobs');
-    final list = response.data as List;
-    return list.map((e) => JobSummary.fromJson(e as Map<String, dynamic>)).toList();
+  Future<JobListPage> listJobs({
+    int page = 1,
+    int perPage = 20,
+    String? status,
+    String? aspectRatio,
+    String? query,
+    bool favoritesOnly = false,
+  }) async {
+    final params = <String, dynamic>{
+      'page': page,
+      'per_page': perPage,
+      'status': ?status,
+      'aspect_ratio': ?aspectRatio,
+      if (query != null && query.isNotEmpty) 'q': query,
+      if (favoritesOnly) 'favorites_only': 'true',
+    };
+    final response = await _dio.get('/api/v1/jobs', queryParameters: params);
+    return JobListPage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<bool> setFavorite(String jobId, bool favorite) async {
+    final response = await _dio.patch(
+      '/api/v1/jobs/$jobId/favorite',
+      data: {'favorite': favorite},
+    );
+    return (response.data as Map<String, dynamic>)['favorite'] as bool;
+  }
+
+  Future<String> duplicate(String jobId, String mode) async {
+    final response = await _dio.post(
+      '/api/v1/jobs/$jobId/duplicate',
+      data: {'mode': mode},
+    );
+    return (response.data as Map<String, dynamic>)['job_id'] as String;
   }
 
   Future<JobDetail> getJob(String jobId) async {

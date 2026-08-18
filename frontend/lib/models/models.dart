@@ -148,18 +148,66 @@ class JobSummary {
     required this.status,
     required this.aspectRatio,
     required this.createdAt,
+    this.title = '',
+    this.prompt = '',
+    this.hasStoryboard = false,
+    this.favorite = false,
   });
 
   final String jobId;
   final String status;
   final String aspectRatio;
   final DateTime createdAt;
+  final String title;
+  final String prompt;
+  final bool hasStoryboard;
+  final bool favorite;
 
   factory JobSummary.fromJson(Map<String, dynamic> json) => JobSummary(
         jobId: json['job_id'] as String,
         status: json['status'] as String? ?? 'unknown',
         aspectRatio: json['aspect_ratio'] as String? ?? '9:16',
         createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+        title: json['title'] as String? ?? '',
+        prompt: json['prompt'] as String? ?? '',
+        hasStoryboard: json['has_storyboard'] as bool? ?? false,
+        favorite: json['favorite'] as bool? ?? false,
+      );
+
+  JobSummary copyWith({String? status, bool? favorite}) => JobSummary(
+        jobId: jobId,
+        status: status ?? this.status,
+        aspectRatio: aspectRatio,
+        createdAt: createdAt,
+        title: title,
+        prompt: prompt,
+        hasStoryboard: hasStoryboard,
+        favorite: favorite ?? this.favorite,
+      );
+}
+
+class JobListPage {
+  const JobListPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.perPage,
+  });
+
+  final List<JobSummary> items;
+  final int total;
+  final int page;
+  final int perPage;
+
+  bool get hasMore => items.length < total;
+
+  factory JobListPage.fromJson(Map<String, dynamic> json) => JobListPage(
+        items: (json['items'] as List? ?? [])
+            .map((e) => JobSummary.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int? ?? 0,
+        page: json['page'] as int? ?? 1,
+        perPage: json['per_page'] as int? ?? 20,
       );
 }
 
