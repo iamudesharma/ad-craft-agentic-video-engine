@@ -69,6 +69,10 @@ class RegenerateRequest(BaseModel):
     storyboard: Storyboard = Field(description="User-edited storyboard to regenerate from")
 
 
+class FavoriteRequest(BaseModel):
+    favorite: bool
+
+
 class QcReport(BaseModel):
     passed: bool
     issues: list[str] = []

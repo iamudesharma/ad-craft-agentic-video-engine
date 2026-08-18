@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 
 from app.config import get_settings
 
@@ -221,3 +222,24 @@ async def delete_record(collection: str, record_id: str) -> None:
         f"/api/collections/{collection}/records/{record_id}", headers=_auth_headers()
     )
     resp.raise_for_status()
+
+
+async def set_job_favorite(job_id: str, user_id: str, favorite: bool) -> bool:
+    client = await _http()
+    record = await get_job(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    favorited = list(record.get("favorited_by") or [])
+    if favorite and user_id not in favorited:
+        favorited.append(user_id)
+    elif not favorite and user_id in favorited:
+        favorited.remove(user_id)
+    else:
+        return favorite
+    resp = await client.patch(
+        f"/api/collections/jobs/records/{job_id}",
+        json={"favorited_by": favorited},
+        headers=_auth_headers(),
+    )
+    resp.raise_for_status()
+    return favorite

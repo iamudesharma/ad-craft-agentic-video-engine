@@ -17,8 +17,13 @@ from app.jobs import (
     subscribe,
     unsubscribe,
 )
-from app.pb import get_job, list_org_jobs
-from app.schemas.storyboard import ApproveRequest, GenerateRequest, RegenerateRequest
+from app.pb import get_job, list_org_jobs, set_job_favorite
+from app.schemas.storyboard import (
+    ApproveRequest,
+    FavoriteRequest,
+    GenerateRequest,
+    RegenerateRequest,
+)
 
 log = logging.getLogger("api")
 
@@ -224,6 +229,18 @@ async def get_job_route(job_id: str, user: dict = Depends(current_user)):
         "created_at": job.get("created_at") or None,
         "updated_at": job.get("updated_at") or None,
     }
+
+
+@router.patch("/jobs/{job_id}/favorite")
+async def favorite_job(
+    job_id: str, body: FavoriteRequest, user: dict = Depends(current_user)
+):
+    record = await _get_job(job_id)
+    org, _ = await orgs.require_org_access(user)
+    if _job_org_id(record) != org["id"]:
+        raise HTTPException(status_code=404, detail="Job not found")
+    new_state = await set_job_favorite(job_id, user["id"], body.favorite)
+    return {"status": "ok", "favorite": new_state}
 
 
 @router.get("/jobs/{job_id}/stream")
