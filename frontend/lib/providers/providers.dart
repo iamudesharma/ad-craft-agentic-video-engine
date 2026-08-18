@@ -314,6 +314,9 @@ class JobListController extends Notifier<JobListState> {
         error: null,
       );
     } catch (error) {
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(loadingMore: false, error: '$error');
     }
   }

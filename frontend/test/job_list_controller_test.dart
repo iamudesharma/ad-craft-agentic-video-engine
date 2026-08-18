@@ -198,4 +198,23 @@ void main() {
     expect(state.items, hasLength(45));
     expect(state.page, 3);
   });
+
+  test('stale loadMore failure does not clobber filtered state', () async {
+    repo.jobs = List.generate(25, (i) => _job('j${i + 1}'));
+    container.read(jobListControllerProvider);
+    await _flush();
+    final completer = Completer<JobListPage>();
+    repo.pendingCall = completer;
+    container.read(jobListControllerProvider.notifier).loadMore();
+    repo.pendingCall = null;
+    container.read(jobListControllerProvider.notifier).applyFilters(query: 'fast');
+    await _flush();
+    final fast = container.read(jobListControllerProvider);
+    completer.completeError(Exception('boom'));
+    await _flush();
+    final state = container.read(jobListControllerProvider);
+    expect(state.query, 'fast');
+    expect(state.items, fast.items);
+    expect(state.loadingMore, isFalse);
+  });
 }
