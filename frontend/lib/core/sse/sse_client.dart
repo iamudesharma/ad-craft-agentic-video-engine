@@ -4,7 +4,7 @@ import 'sse_parser.dart';
 abstract class SseClient {
   Stream<ServerEvent> get stream;
 
-  Future<void> connect(Uri uri);
+  Future<void> connect(Uri uri, {String? token});
 
   void stop();
 

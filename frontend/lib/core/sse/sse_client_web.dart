@@ -23,8 +23,16 @@ class SseClientWeb implements SseClient {
   Stream<ServerEvent> get stream => _controller.stream;
 
   @override
-  Future<void> connect(Uri uri) async {
-    final source = html.EventSource(uri.toString());
+  Future<void> connect(Uri uri, {String? token}) async {
+    // EventSource cannot set request headers, so the token travels as a
+    // query parameter (the backend accepts it for the stream endpoint).
+    var resolved = uri;
+    if (token != null) {
+      final query = Map<String, String>.from(uri.queryParameters);
+      query['token'] = token;
+      resolved = uri.replace(queryParameters: query);
+    }
+    final source = html.EventSource(resolved.toString());
     _source = source;
     final parser = SseParser();
     source.onMessage.listen((message) {

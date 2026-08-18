@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/providers.dart';
 import '../widgets/brand_guidelines_form.dart';
-import '../widgets/status_badge.dart';
+import '../widgets/job_list.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -42,6 +42,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
       if (mounted) {
         _promptController.clear();
+        ref.read(jobListControllerProvider.notifier).addJob(jobId);
         context.push('/jobs/$jobId');
       }
     } catch (error) {
@@ -63,27 +64,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final org = ref.watch(authControllerProvider).org;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ad Craft - Agentic Video Engine'),
+        title: Text(org == null ? 'Ad Craft' : 'Ad Craft - ${org.name}'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'org') {
+                context.push('/org');
+              } else if (value == 'logout') {
+                ref.read(authControllerProvider.notifier).logout();
+              }
+            },
+            itemBuilder: (context) => [
+              if (org != null)
+                const PopupMenuItem(value: 'org', child: Text('Organization settings')),
+              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
+            ],
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 1000;
           final form = _buildForm(context);
-          final list = _buildJobList(context);
           if (wide) {
             return Row(
               children: [
                 SizedBox(width: 400, child: form),
                 const VerticalDivider(width: 1),
-                Expanded(child: list),
+                const Expanded(child: JobListSection()),
               ],
             );
           }
           return ListView(
             padding: const EdgeInsets.all(16),
-            children: [form, const SizedBox(height: 16), list],
+            children: [
+              form,
+              const SizedBox(height: 16),
+              const SizedBox(height: 420, child: JobListSection()),
+            ],
           );
         },
       ),
@@ -110,7 +132,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        BrandGuidelinesForm(key: _brandFormKey, enabled: !_busy),
+        BrandGuidelinesForm(
+          key: _brandFormKey,
+          enabled: !_busy,
+          initial: ref.watch(authControllerProvider).org?.brandGuidelines,
+          title: 'Brand guidelines for this ad',
+          subtitle: 'Pre-filled from your organization - change per ad if needed',
+        ),
         const SizedBox(height: 16),
         const Text('Aspect ratio', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
@@ -143,54 +171,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 )
               : const Icon(Icons.play_arrow),
           label: const Text('Generate ad'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildJobList(BuildContext context) {
-    final jobs = ref.watch(jobListProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            'Jobs',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        Expanded(
-          child: jobs.when(
-            data: (items) => items.isEmpty
-                ? const Center(child: Text('No jobs yet - generate one'))
-                : ListView.separated(
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final job = items[index];
-                      return ListTile(
-                        leading: StatusBadge(status: job.status),
-                        title: Text('#${job.jobId.substring(0, 8)}'),
-                        subtitle: Text(
-                          '${job.aspectRatio}  |  ${job.createdAt.toLocal()}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/jobs/${job.jobId}'),
-                      );
-                    },
-                  ),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Cannot reach backend at the configured API base URL.\n$error',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
         ),
       ],
     );
