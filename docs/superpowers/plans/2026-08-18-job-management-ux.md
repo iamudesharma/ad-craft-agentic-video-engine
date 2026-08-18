@@ -1167,6 +1167,8 @@ git commit -m "feat: job list models and API client for search, filters, favorit
 Create `frontend/test/job_list_controller_test.dart`:
 
 ```dart
+import 'dart:async';
+
 import 'package:ad_craft_frontend/core/api/api_client.dart';
 import 'package:ad_craft_frontend/models/models.dart';
 import 'package:ad_craft_frontend/providers/providers.dart';
@@ -1189,6 +1191,7 @@ class _FakeRepo extends ApiRepository {
   final List<Map<String, dynamic>> listCalls = [];
   bool? lastFavorite;
   bool failFavorites = false;
+  Completer<JobListPage>? pendingCall;
 
   @override
   Future<JobListPage> listJobs({
@@ -1199,6 +1202,10 @@ class _FakeRepo extends ApiRepository {
     String? query,
     bool favoritesOnly = false,
   }) async {
+    final pending = pendingCall;
+    if (pending != null) {
+      return pending.future;
+    }
     listCalls.add({
       'page': page,
       'query': query,
@@ -1324,6 +1331,61 @@ void main() {
     expect(state.items.first.jobId, 'brand-new');
     expect(state.items, hasLength(2));
   });
+
+  test('stale filter responses are discarded', () async {
+    repo.jobs = [_job('j1')];
+    container.read(jobListControllerProvider);
+    await _flush();
+    final completer = Completer<JobListPage>();
+    repo.pendingCall = completer.future;
+    container.read(jobListControllerProvider.notifier).applyFilters(query: 'slow');
+    repo.pendingCall = null;
+    container.read(jobListControllerProvider.notifier).applyFilters(query: 'fast');
+    await _flush();
+    final fast = container.read(jobListControllerProvider);
+    completer.complete(
+      JobListPage(items: [_job('stale')], total: 1, page: 1, perPage: 20),
+    );
+    await _flush();
+    final state = container.read(jobListControllerProvider);
+    expect(state.items, fast.items);
+    expect(state.items.first.jobId, 'j1');
+  });
+
+  test('poll does not truncate a paginated list', () async {
+    repo.jobs = List.generate(45, (i) => _job('j${i + 1}'));
+    container.read(jobListControllerProvider);
+    await _flush();
+    container.read(jobListControllerProvider.notifier).loadMore();
+    await _flush();
+    container.read(jobListControllerProvider.notifier).loadMore();
+    await _flush();
+    expect(container.read(jobListControllerProvider).items, hasLength(45));
+    await Future<void>.delayed(const Duration(seconds: 6));
+    await _flush();
+    final state = container.read(jobListControllerProvider);
+    expect(state.items, hasLength(45));
+    expect(state.page, 3);
+  });
+
+  test('stale loadMore failure does not clobber filtered state', () async {
+    repo.jobs = List.generate(25, (i) => _job('j${i + 1}'));
+    container.read(jobListControllerProvider);
+    await _flush();
+    final completer = Completer<JobListPage>();
+    repo.pendingCall = completer;
+    container.read(jobListControllerProvider.notifier).loadMore();
+    repo.pendingCall = null;
+    container.read(jobListControllerProvider.notifier).applyFilters(query: 'fast');
+    await _flush();
+    final fast = container.read(jobListControllerProvider);
+    completer.completeError(Exception('boom'));
+    await _flush();
+    final state = container.read(jobListControllerProvider);
+    expect(state.query, 'fast');
+    expect(state.items, fast.items);
+    expect(state.loadingMore, isFalse);
+  });
 }
 ```
 
@@ -1405,6 +1467,7 @@ class JobListState {
 
 class JobListController extends Notifier<JobListState> {
   Timer? _pollTimer;
+  int _generation = 0;
 
   @override
   JobListState build() {
@@ -1430,11 +1493,13 @@ class JobListController extends Notifier<JobListState> {
       favoritesOnly: favoritesOnly,
       loading: true,
     );
+    _generation++;
     _load();
   }
 
   Future<void> _load() async {
     final s = state;
+    final gen = _generation;
     try {
       final page = await ref.read(repositoryProvider).listJobs(
             page: s.page,
@@ -1444,6 +1509,9 @@ class JobListController extends Notifier<JobListState> {
             query: s.query.isEmpty ? null : s.query,
             favoritesOnly: s.favoritesOnly,
           );
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(
         items: page.items,
         total: page.total,
@@ -1451,12 +1519,16 @@ class JobListController extends Notifier<JobListState> {
         error: null,
       );
     } catch (error) {
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(loading: false, error: '$error');
     }
   }
 
   Future<void> loadMore() async {
     final s = state;
+    final gen = _generation;
     if (s.loading || s.loadingMore || !s.hasMore) {
       return;
     }
@@ -1470,6 +1542,9 @@ class JobListController extends Notifier<JobListState> {
             query: s.query.isEmpty ? null : s.query,
             favoritesOnly: s.favoritesOnly,
           );
+      if (gen != _generation) {
+        return;
+      }
       final known = s.items.map((j) => j.jobId).toSet();
       final combined = [
         ...s.items,
@@ -1483,6 +1558,9 @@ class JobListController extends Notifier<JobListState> {
         error: null,
       );
     } catch (error) {
+      if (gen != _generation) {
+        return;
+      }
       state = s.copyWith(loadingMore: false, error: '$error');
     }
   }
@@ -1533,20 +1611,25 @@ class JobListController extends Notifier<JobListState> {
 
   Future<void> _poll() async {
     final s = state;
-    if (s.hasActiveFilters || s.loading || s.loadingMore) {
+    final gen = _generation;
+    if (s.page > 1 || s.hasActiveFilters || s.loading || s.loadingMore) {
       return;
     }
     try {
       final page = await ref.read(repositoryProvider).listJobs(page: 1, perPage: 20);
+      if (gen != _generation || state.page > 1 || state.hasActiveFilters) {
+        return;
+      }
       state = s.copyWith(
         items: page.items,
         total: page.total,
-        page: 1,
         loading: false,
         error: null,
       );
     } catch (error) {
-      state = s.copyWith(error: '$error');
+      if (gen == _generation && state.page == 1) {
+        state = s.copyWith(error: '$error');
+      }
     }
   }
 }
