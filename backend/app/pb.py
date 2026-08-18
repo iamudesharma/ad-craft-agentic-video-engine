@@ -89,19 +89,43 @@ async def list_jobs(limit: int = 20, status_filter: str | None = None) -> list[d
     return resp.json()["items"]
 
 
-async def list_org_jobs(org_id: str, limit: int = 20) -> list[dict[str, Any]]:
+def _esc(value: str) -> str:
+    return value.replace('"', '""')
+
+
+async def list_org_jobs(
+    org_id: str,
+    *,
+    page: int = 1,
+    per_page: int = 20,
+    status: str | None = None,
+    aspect_ratio: str | None = None,
+    query: str | None = None,
+    favorites_only: bool = False,
+    user_id: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     client = await _http()
+    parts = [f'org_id = "{org_id}"']
+    if status:
+        parts.append(f'status = "{_esc(status)}"')
+    if aspect_ratio:
+        parts.append(f'aspect_ratio = "{_esc(aspect_ratio)}"')
+    if query and query.strip():
+        parts.append(f'user_prompt ~ "{_esc(query.strip())}"')
+    if favorites_only and user_id:
+        parts.append(f'favorited_by ~ "{user_id}"')
     params: dict[str, Any] = {
-        "page": 1,
-        "perPage": limit,
+        "page": max(1, page),
+        "perPage": max(1, min(per_page, 100)),
         "sort": "-created_at",
-        "filter": f'org_id = "{org_id}"',
+        "filter": " && ".join(parts),
     }
     resp = await client.get(
         "/api/collections/jobs/records", params=params, headers=_auth_headers()
     )
     resp.raise_for_status()
-    return resp.json()["items"]
+    data = resp.json()
+    return data["items"], data["totalItems"]
 
 
 async def auth_with_password(email: str, password: str) -> dict[str, Any]:

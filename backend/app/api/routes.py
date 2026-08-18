@@ -151,19 +151,54 @@ async def generate(request: GenerateRequest, user: dict = Depends(current_user))
 
 
 @router.get("/jobs")
-async def list_jobs_route(user: dict = Depends(current_user), limit: int = 20):
+async def list_jobs_route(
+    user: dict = Depends(current_user),
+    page: int = 1,
+    per_page: int = 20,
+    status: str | None = None,
+    aspect_ratio: str | None = None,
+    q: str | None = None,
+    favorites_only: bool = False,
+):
     org, _ = await orgs.require_org_access(user)
-    jobs = await list_org_jobs(org["id"], limit=limit)
-    return [
-        {
-            "job_id": job["id"],
-            "status": job.get("status"),
-            "aspect_ratio": job.get("aspect_ratio"),
-            "created_at": job.get("created_at") or None,
-            "updated_at": job.get("updated_at") or None,
-        }
-        for job in jobs
-    ]
+    items, total = await list_org_jobs(
+        org["id"],
+        page=page,
+        per_page=per_page,
+        status=status,
+        aspect_ratio=aspect_ratio,
+        query=q,
+        favorites_only=favorites_only,
+        user_id=user["id"],
+    )
+    payload = []
+    for job in items:
+        storyboard = job.get("storyboard")
+        title = ""
+        if isinstance(storyboard, dict) and storyboard.get("title"):
+            title = storyboard["title"]
+        if not title:
+            prompt = (job.get("user_prompt") or "").strip()
+            title = prompt if len(prompt) <= 80 else prompt[:80].rstrip() + "…"
+        payload.append(
+            {
+                "job_id": job["id"],
+                "status": job.get("status"),
+                "aspect_ratio": job.get("aspect_ratio"),
+                "title": title,
+                "prompt": job.get("user_prompt") or "",
+                "has_storyboard": bool(storyboard),
+                "favorite": user["id"] in (job.get("favorited_by") or []),
+                "created_at": job.get("created_at") or None,
+                "updated_at": job.get("updated_at") or None,
+            }
+        )
+    return {
+        "items": payload,
+        "total": total,
+        "page": page,
+        "per_page": max(1, min(per_page, 100)),
+    }
 
 
 async def _get_job(job_id: str) -> dict:
