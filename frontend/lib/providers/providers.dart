@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/api/api_client.dart';
 import '../core/config.dart';
@@ -21,11 +22,148 @@ final repositoryProvider = Provider<ApiRepository>(
   (ref) => ApiRepository(ref.watch(dioProvider)),
 );
 
+enum AuthStatus { unknown, unauthenticated, authenticated }
+
+class AuthState {
+  const AuthState({
+    required this.status,
+    this.token,
+    this.user,
+    this.org,
+    this.error,
+  });
+
+  final AuthStatus status;
+  final String? token;
+  final AuthUser? user;
+  final Org? org;
+  final String? error;
+}
+
+class AuthController extends Notifier<AuthState> {
+  static const _tokenKey = 'auth_token';
+
+  @override
+  AuthState build() {
+    ref.read(repositoryProvider).onUnauthorized = () {
+      unawaited(_clearSession());
+    };
+    _bootstrap();
+    return const AuthState(status: AuthStatus.unknown);
+  }
+
+  Future<void> _bootstrap() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_tokenKey);
+    if (token == null || token.isEmpty) {
+      state = const AuthState(status: AuthStatus.unauthenticated);
+      return;
+    }
+    ref.read(repositoryProvider).setToken(token);
+    try {
+      await _applyMe(token);
+    } catch (_) {
+      await _clearSession();
+    }
+  }
+
+  Future<void> login({
+    required String email,
+    required String password,
+  }) async {
+    final data = await ref
+        .read(repositoryProvider)
+        .login(email: email, password: password);
+    await _applyMe(data['token'] as String);
+  }
+
+  Future<void> signup({
+    required String email,
+    required String password,
+    required String name,
+  }) async {
+    final data = await ref.read(repositoryProvider).signup(
+          email: email,
+          password: password,
+          name: name,
+        );
+    await _applyMe(data['token'] as String);
+  }
+
+  Future<void> completeOnboarding({
+    required String orgName,
+    BrandGuidelines? brandGuidelines,
+  }) async {
+    final org = await ref.read(repositoryProvider).completeOnboarding(
+          orgName: orgName,
+          brandGuidelines: brandGuidelines,
+        );
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      token: state.token,
+      user: state.user,
+      org: org,
+    );
+  }
+
+  Future<void> refreshOrg() async {
+    final org = await ref.read(repositoryProvider).getOrg();
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      token: state.token,
+      user: state.user,
+      org: org,
+    );
+  }
+
+  void setOrg(Org org) {
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      token: state.token,
+      user: state.user,
+      org: org,
+    );
+  }
+
+  Future<void> _applyMe(String token) async {
+    ref.read(repositoryProvider).setToken(token);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+    final me = await ref.read(repositoryProvider).me();
+    state = AuthState(
+      status: AuthStatus.authenticated,
+      token: token,
+      user: AuthUser.fromJson(me['user'] as Map<String, dynamic>),
+      org: me['org'] == null
+          ? null
+          : Org.fromJson(me['org'] as Map<String, dynamic>),
+    );
+  }
+
+  Future<void> logout() async {
+    await _clearSession();
+  }
+
+  Future<void> _clearSession() async {
+    ref.read(repositoryProvider).setToken(null);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+}
+
+final authControllerProvider =
+    NotifierProvider<AuthController, AuthState>(AuthController.new);
+
 final sseStreamProvider = StreamProvider.autoDispose
     .family<ServerEvent, String>((ref, jobId) async* {
   final client = SseClient.create();
   ref.onDispose(client.stop);
-  await client.connect(Uri.parse('$apiBaseUrl/api/v1/jobs/$jobId/stream'));
+  final auth = ref.watch(authControllerProvider);
+  await client.connect(
+    Uri.parse('$apiBaseUrl/api/v1/jobs/$jobId/stream'),
+    token: auth.token,
+  );
   yield* client.stream;
 });
 

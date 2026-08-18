@@ -45,6 +45,103 @@ class BrandGuidelines {
       };
 }
 
+class AuthUser {
+  const AuthUser({
+    required this.id,
+    required this.email,
+    this.name = '',
+  });
+
+  final String id;
+  final String email;
+  final String name;
+
+  factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
+        id: json['id'] as String,
+        email: json['email'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+      );
+}
+
+class OrgMember {
+  const OrgMember({
+    required this.id,
+    required this.userId,
+    required this.role,
+    this.email = '',
+    this.name = '',
+  });
+
+  final String id;
+  final String userId;
+  final String role;
+  final String email;
+  final String name;
+
+  factory OrgMember.fromJson(Map<String, dynamic> json) => OrgMember(
+        id: json['id'] as String,
+        userId: json['user_id'] as String? ?? '',
+        role: json['role'] as String? ?? 'member',
+        email: json['email'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+      );
+
+  bool get isOwner => role == 'owner';
+  bool get isAdmin => role == 'admin' || role == 'owner';
+}
+
+class Org {
+  const Org({
+    required this.id,
+    required this.name,
+    this.brandGuidelines,
+    this.myRole = 'member',
+    this.members = const [],
+  });
+
+  final String id;
+  final String name;
+  final BrandGuidelines? brandGuidelines;
+  final String myRole;
+  final List<OrgMember> members;
+
+  factory Org.fromJson(Map<String, dynamic> json) => Org(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        brandGuidelines: json['brand_guidelines'] == null
+            ? null
+            : _guidelinesFromMap(json['brand_guidelines'] as Map<String, dynamic>),
+        myRole: json['my_role'] as String? ?? 'member',
+        members: (json['members'] as List? ?? [])
+            .map((m) => OrgMember.fromJson(m as Map<String, dynamic>))
+            .toList(),
+      );
+
+  bool get canManage => myRole == 'owner' || myRole == 'admin';
+
+  static BrandGuidelines? _guidelinesFromMap(Map<String, dynamic> json) {
+    final g = BrandGuidelines(
+      brandName: json['brand_name'] as String?,
+      tagline: json['tagline'] as String?,
+      toneOfVoice: json['tone_of_voice'] as String?,
+      colors: _stringList(json['colors']),
+      typography: json['typography'] as String?,
+      visualStyle: json['visual_style'] as String?,
+      doList: _stringList(json['do_list']),
+      dontList: _stringList(json['dont_list']),
+      targetAudience: json['target_audience'] as String?,
+    );
+    return g.isEmpty ? null : g;
+  }
+
+  static List<String>? _stringList(dynamic value) {
+    if (value is List) {
+      return value.map((e) => e.toString()).toList();
+    }
+    return null;
+  }
+}
+
 class JobSummary {
   const JobSummary({
     required this.jobId,

@@ -17,16 +17,19 @@ class SseClientIO implements SseClient {
   Stream<ServerEvent> get stream => _controller.stream;
 
   @override
-  Future<void> connect(Uri uri) async {
-    _run(uri);
+  Future<void> connect(Uri uri, {String? token}) async {
+    _run(uri, token);
   }
 
-  Future<void> _run(Uri uri) async {
+  Future<void> _run(Uri uri, String? token) async {
     var backoff = const Duration(seconds: 1);
     while (!_stopped) {
       try {
         final request = http.Request('GET', uri);
         request.headers['Accept'] = 'text/event-stream';
+        if (token != null) {
+          request.headers['Authorization'] = 'Bearer $token';
+        }
         final response = await _client.send(request);
         if (response.statusCode != 200) {
           throw HttpException('SSE connection failed: ${response.statusCode}');

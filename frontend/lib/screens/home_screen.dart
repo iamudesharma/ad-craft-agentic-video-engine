@@ -63,9 +63,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final org = ref.watch(authControllerProvider).org;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ad Craft - Agentic Video Engine'),
+        title: Text(org == null ? 'Ad Craft' : 'Ad Craft - ${org.name}'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'org') {
+                context.push('/org');
+              } else if (value == 'logout') {
+                ref.read(authControllerProvider.notifier).logout();
+              }
+            },
+            itemBuilder: (context) => [
+              if (org != null)
+                const PopupMenuItem(value: 'org', child: Text('Organization settings')),
+              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
+            ],
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -110,7 +128,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        BrandGuidelinesForm(key: _brandFormKey, enabled: !_busy),
+        BrandGuidelinesForm(
+          key: _brandFormKey,
+          enabled: !_busy,
+          initial: ref.watch(authControllerProvider).org?.brandGuidelines,
+          title: 'Brand guidelines for this ad',
+          subtitle: 'Pre-filled from your organization - change per ad if needed',
+        ),
         const SizedBox(height: 16),
         const Text('Aspect ratio', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),

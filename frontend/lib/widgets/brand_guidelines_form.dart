@@ -3,9 +3,18 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 
 class BrandGuidelinesForm extends StatefulWidget {
-  const BrandGuidelinesForm({super.key, this.enabled = true});
+  const BrandGuidelinesForm({
+    super.key,
+    this.enabled = true,
+    this.initial,
+    this.title,
+    this.subtitle,
+  });
 
   final bool enabled;
+  final BrandGuidelines? initial;
+  final String? title;
+  final String? subtitle;
 
   @override
   BrandGuidelinesFormState createState() => BrandGuidelinesFormState();
@@ -21,6 +30,40 @@ class BrandGuidelinesFormState extends State<BrandGuidelinesForm> {
   final _doList = TextEditingController();
   final _dontList = TextEditingController();
   final _audience = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.initial;
+    if (g != null) {
+      _brandName.text = g.brandName ?? '';
+      _tagline.text = g.tagline ?? '';
+      _tone.text = g.toneOfVoice ?? '';
+      _colors.text = g.colors?.join(', ') ?? '';
+      _typography.text = g.typography ?? '';
+      _visualStyle.text = g.visualStyle ?? '';
+      _doList.text = g.doList?.join(', ') ?? '';
+      _dontList.text = g.dontList?.join(', ') ?? '';
+      _audience.text = g.targetAudience ?? '';
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BrandGuidelinesForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initial != oldWidget.initial) {
+      final g = widget.initial;
+      _brandName.text = g?.brandName ?? '';
+      _tagline.text = g?.tagline ?? '';
+      _tone.text = g?.toneOfVoice ?? '';
+      _colors.text = g?.colors?.join(', ') ?? '';
+      _typography.text = g?.typography ?? '';
+      _visualStyle.text = g?.visualStyle ?? '';
+      _doList.text = g?.doList?.join(', ') ?? '';
+      _dontList.text = g?.dontList?.join(', ') ?? '';
+      _audience.text = g?.targetAudience ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -90,10 +133,10 @@ class BrandGuidelinesFormState extends State<BrandGuidelinesForm> {
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        title: const Text('Brand guidelines (optional)'),
-        subtitle: const Text(
-          'Tone, colors, typography, do\'s and don\'ts',
-          style: TextStyle(fontSize: 12),
+        title: Text(widget.title ?? 'Brand guidelines (optional)'),
+        subtitle: Text(
+          widget.subtitle ?? 'Tone, colors, typography, do\'s and don\'ts',
+          style: const TextStyle(fontSize: 12),
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         expandedCrossAxisAlignment: CrossAxisAlignment.stretch,

@@ -195,7 +195,9 @@ async def _execute(job_id: str, input) -> None:
         emit(job_id, {"type": "job_done"})
 
 
-async def start_job(request: GenerateRequest) -> dict:
+async def start_job(
+    request: GenerateRequest, *, org_id: str, created_by: str
+) -> dict:
     settings = get_settings()
     record = await create_job(
         {
@@ -212,6 +214,8 @@ async def start_job(request: GenerateRequest) -> dict:
                 else settings.hitl_required
             ),
             "status": "pending",
+            "org_id": org_id,
+            "created_by": created_by,
         }
     )
     job_id = record["id"]

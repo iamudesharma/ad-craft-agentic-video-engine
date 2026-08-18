@@ -87,3 +87,113 @@ async def list_jobs(limit: int = 20, status_filter: str | None = None) -> list[d
     )
     resp.raise_for_status()
     return resp.json()["items"]
+
+
+async def list_org_jobs(org_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    client = await _http()
+    params: dict[str, Any] = {
+        "page": 1,
+        "perPage": limit,
+        "sort": "-created_at",
+        "filter": f'org_id = "{org_id}"',
+    }
+    resp = await client.get(
+        "/api/collections/jobs/records", params=params, headers=_auth_headers()
+    )
+    resp.raise_for_status()
+    return resp.json()["items"]
+
+
+async def auth_with_password(email: str, password: str) -> dict[str, Any]:
+    client = await _http()
+    resp = await client.post(
+        "/api/collections/users/auth-with-password",
+        json={"identity": email, "password": password},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def auth_refresh(token: str) -> dict[str, Any]:
+    client = await _http()
+    resp = await client.post(
+        "/api/collections/users/auth-refresh",
+        headers={"Authorization": token},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def create_user(data: dict[str, Any]) -> dict[str, Any]:
+    client = await _http()
+    resp = await client.post(
+        "/api/collections/users/records", json=data, headers=_auth_headers()
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def find_user_by_email(email: str) -> dict[str, Any] | None:
+    client = await _http()
+    params = {"filter": f'email = "{email}"', "perPage": 1}
+    resp = await client.get(
+        "/api/collections/users/records", params=params, headers=_auth_headers()
+    )
+    resp.raise_for_status()
+    items = resp.json().get("items") or []
+    return items[0] if items else None
+
+
+async def create_record(collection: str, data: dict[str, Any]) -> dict[str, Any]:
+    client = await _http()
+    resp = await client.post(
+        f"/api/collections/{collection}/records", json=data, headers=_auth_headers()
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def get_record(collection: str, record_id: str) -> dict[str, Any] | None:
+    client = await _http()
+    resp = await client.get(
+        f"/api/collections/{collection}/records/{record_id}", headers=_auth_headers()
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_records(
+    collection: str, filter: str | None = None, limit: int = 200, expand: str | None = None
+) -> list[dict[str, Any]]:
+    client = await _http()
+    params: dict[str, Any] = {"page": 1, "perPage": limit, "sort": "created_at"}
+    if filter:
+        params["filter"] = filter
+    if expand:
+        params["expand"] = expand
+    resp = await client.get(
+        f"/api/collections/{collection}/records", params=params, headers=_auth_headers()
+    )
+    resp.raise_for_status()
+    return resp.json()["items"]
+
+
+async def update_record(collection: str, record_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    client = await _http()
+    resp = await client.patch(
+        f"/api/collections/{collection}/records/{record_id}",
+        json=data,
+        headers=_auth_headers(),
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def delete_record(collection: str, record_id: str) -> None:
+    client = await _http()
+    resp = await client.delete(
+        f"/api/collections/{collection}/records/{record_id}", headers=_auth_headers()
+    )
+    resp.raise_for_status()
